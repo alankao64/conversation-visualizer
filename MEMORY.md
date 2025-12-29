@@ -282,6 +282,36 @@ NameResolutionError: Failed to resolve 'huggingface.co'
 
 ---
 
+### Issue: "ValueError: max_df corresponds to < documents than min_df"
+
+**Symptom:**
+```
+ValueError: max_df corresponds to < documents than min_df
+```
+Crash during topic modeling when using small datasets (< 20 chunks)
+
+**Cause:**
+- `CountVectorizer` was using `min_df=2` for all datasets
+- With small datasets (<20 documents), this creates impossible constraints
+- sample_transcript.txt only generates 11 chunks, triggering this error
+
+**Solution:**
+- Made `min_df` adaptive based on dataset size in `src/topic_modeling.py`
+- Use `min_df=1` for datasets with <20 documents
+- Use `min_df=2` for larger datasets (original behavior)
+- Added warning messages to guide users:
+  - Warning when dataset < 15 documents
+  - Warning when `min_topic_size` is too large for dataset size
+  - Suggests better parameters for small datasets
+
+**Fix Location:** `src/topic_modeling.py:45-90`
+
+**Status:** ✅ Fixed in commit `db211d6`
+
+**Related:** Users should still prefer larger datasets (50+ chunks) for best results. For small transcripts like sample_transcript.txt, use `--min-topic-size 2` for better clustering.
+
+---
+
 ### Issue: "Too many small topics" or "Topics not coherent"
 
 **Symptom:** BERTopic creates 20+ topics, many with only 2-3 segments
