@@ -26,6 +26,29 @@ class ConversationVisualizer:
         self.figsize = figsize
         self.color_map = {}
 
+    def _rgb_string_to_hex(self, rgb_string: str) -> str:
+        """
+        Convert Plotly RGB string format to hex color for matplotlib.
+
+        Args:
+            rgb_string: Color in format 'rgb(r,g,b)' or hex '#RRGGBB'
+
+        Returns:
+            Hex color string '#RRGGBB'
+        """
+        # If already hex, return as-is
+        if rgb_string.startswith('#'):
+            return rgb_string
+
+        # Parse 'rgb(r,g,b)' format
+        if rgb_string.startswith('rgb('):
+            rgb_values = rgb_string[4:-1].split(',')
+            r, g, b = [int(v.strip()) for v in rgb_values]
+            return f'#{r:02x}{g:02x}{b:02x}'
+
+        # Return as-is if unrecognized format
+        return rgb_string
+
     def _get_topic_colors(self, chunks: List[Dict]) -> Dict[int, str]:
         """
         Generate a color map for topics.
@@ -50,7 +73,9 @@ class ConversationVisualizer:
             if topic_id == -1:
                 color_map[topic_id] = '#CCCCCC'  # Gray for outliers
             else:
-                color_map[topic_id] = colors[color_idx % len(colors)]
+                # Convert Plotly RGB string to hex for matplotlib compatibility
+                plotly_color = colors[color_idx % len(colors)]
+                color_map[topic_id] = self._rgb_string_to_hex(plotly_color)
                 color_idx += 1
 
         return color_map
