@@ -67,6 +67,39 @@ python src/similarity.py
 python src/visualize.py
 ```
 
+**⚡ Fast Testing for Bug Fixes (Skip Full Pipeline)**
+
+When fixing bugs in isolated code sections, avoid reinstalling dependencies each session:
+
+```bash
+# For logic/syntax fixes: Just review the code
+# - Read the file and verify logic
+# - Check similar patterns in codebase
+# - No need to run if confident in fix
+
+# For import/syntax errors: Use Python's parser
+python -m py_compile src/topic_modeling.py  # Validates syntax only
+
+# For testing individual functions: Import in Python REPL
+python -c "from src.topic_modeling import TopicModeler; print('OK')"
+```
+
+**When to skip full testing:**
+- ✅ Index/offset fixes (like probabilities[i][topic_id] → probabilities[i][topic_id])
+- ✅ Type conversions (int(), float(), str())
+- ✅ Conditional logic fixes (if/else corrections)
+- ✅ String formatting changes
+- ✅ Variable renaming
+
+**When you MUST test:**
+- ❌ Algorithm changes
+- ❌ New dependencies
+- ❌ External API/model calls
+- ❌ File I/O changes
+- ❌ User-facing behavior changes
+
+**Pro tip:** User can test locally after PR merge. Focus on correct logic in code review.
+
 ### Adding Dependencies
 
 ```bash

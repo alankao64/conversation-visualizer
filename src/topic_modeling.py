@@ -183,7 +183,13 @@ class TopicModeler:
             if probabilities is not None and len(probabilities) > 0:
                 if len(probabilities.shape) == 2:
                     # Get probability for assigned topic
-                    chunk['topic_probability'] = float(probabilities[i][topic_id + 1])
+                    # Note: BERTopic's probabilities array excludes outlier topic (-1)
+                    # So for topic -1, we set probability to None
+                    # For other topics, the topic_id is the direct index into probabilities
+                    if topic_id == -1:
+                        chunk['topic_probability'] = None
+                    else:
+                        chunk['topic_probability'] = float(probabilities[i][topic_id])
                 else:
                     chunk['topic_probability'] = None
             else:
