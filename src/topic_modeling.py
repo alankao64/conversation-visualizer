@@ -52,6 +52,20 @@ class TopicModeler:
         Returns:
             Tuple of (topics, probabilities)
         """
+        num_docs = len(documents)
+
+        # Warn about small datasets
+        if num_docs < 15 and self.verbose:
+            print(f"WARNING: Small dataset ({num_docs} documents).")
+            print("Topic modeling works best with 20+ chunks.")
+            print("Consider using smaller chunk_size to generate more chunks.")
+
+        # Warn if min_topic_size is too large for dataset
+        if self.min_topic_size > num_docs // 3 and self.verbose:
+            suggested_size = max(2, num_docs // 5)
+            print(f"WARNING: min_topic_size ({self.min_topic_size}) is large relative to dataset size.")
+            print(f"Consider using --min-topic-size {suggested_size} for better results.")
+
         if self.verbose:
             print("Generating embeddings...")
 
@@ -65,11 +79,15 @@ class TopicModeler:
             print(f"Embeddings shape: {self.embeddings.shape}")
             print("Fitting BERTopic model...")
 
+        # Adjust vectorizer parameters based on dataset size
+        # For small datasets, use min_df=1 to avoid the "max_df < min_df" error
+        min_df = 1 if num_docs < 20 else 2
+
         # Use CountVectorizer with improved settings for better topic labels
         vectorizer_model = CountVectorizer(
             ngram_range=(1, 2),
             stop_words="english",
-            min_df=2
+            min_df=min_df
         )
 
         # Initialize and fit BERTopic
