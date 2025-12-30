@@ -15,11 +15,12 @@ class TopicModeler:
 
     def __init__(
         self,
-        embedding_model: str = "all-MiniLM-L6-v2",
+        embedding_model: str = "all-mpnet-base-v2",
         nr_topics: any = "auto",
         min_topic_size: int = 5,
         calculate_probabilities: bool = True,
-        verbose: bool = True
+        verbose: bool = True,
+        use_gpu: bool = True
     ):
         """
         Initialize topic modeler.
@@ -30,15 +31,29 @@ class TopicModeler:
             min_topic_size: Minimum size for a topic cluster
             calculate_probabilities: Whether to calculate topic probabilities
             verbose: Whether to print progress
+            use_gpu: Whether to use GPU acceleration if available
         """
         self.embedding_model_name = embedding_model
         self.nr_topics = nr_topics
         self.min_topic_size = min_topic_size
         self.calculate_probabilities = calculate_probabilities
         self.verbose = verbose
+        self.use_gpu = use_gpu
 
         # Initialize models
         self.embedding_model = SentenceTransformer(embedding_model)
+
+        # Move to GPU if available and requested
+        if self.use_gpu:
+            import torch
+            if torch.cuda.is_available():
+                self.embedding_model = self.embedding_model.to('cuda')
+                if self.verbose:
+                    print(f"Using GPU acceleration (CUDA available)")
+            else:
+                if self.verbose:
+                    print("GPU requested but CUDA not available, using CPU")
+
         self.topic_model = None
         self.embeddings = None
 

@@ -3,6 +3,7 @@ bertopic>=0.16.0
 sentence-transformers>=2.2.2
 umap-learn>=0.5.3
 hdbscan>=0.8.33
+torch>=2.0.0  # For GPU acceleration
 
 # Data processing
 numpy>=1.24.0
@@ -17,6 +18,9 @@ spacy>=3.7.0
 plotly>=5.18.0
 matplotlib>=3.8.0
 kaleido>=0.2.1
+
+# LLM API
+anthropic>=0.18.0  # For semantic topic labeling with Claude
 
 # Utilities
 tqdm>=4.66.0

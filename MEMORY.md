@@ -16,15 +16,15 @@
 - ✅ Color format compatibility fix for matplotlib
 
 **What's In Progress:**
-- None
+- Testing LLM-powered topic labeling and upgraded embeddings
 
 **What's Blocked:**
 - None
 
 **Next Priorities:**
-1. Test in unrestricted environment (local machine or cloud VM)
-2. Get real podcast transcript (JRE #2219 Trump episode)
-3. Generate example visualizations for README
+1. Test upgraded embeddings and LLM labeling with Trump podcast
+2. Evaluate topic quality improvements
+3. Consider visualization enhancements (thread view)
 4. Consider v2.0 features (speaker differentiation, sentiment analysis)
 
 ---
@@ -53,7 +53,9 @@ python src/preprocessing.py
 - `MEMORY.md` - This file (project memory)
 
 **Critical Decisions:**
-- **Embedding model:** `all-MiniLM-L6-v2` (balance of speed and quality)
+- **Embedding model:** `all-mpnet-base-v2` (upgraded from MiniLM for better quality)
+- **GPU acceleration:** Enabled by default (uses CUDA if available)
+- **Topic labeling:** Claude API for semantic labels (optional, replaces keyword-based)
 - **Default chunk size:** 7 sentences (tested sweet spot)
 - **Similarity threshold:** 0.75 (catches meaningful returns without noise)
 - **Topic discovery:** BERTopic with auto topic count (adaptive to content)
@@ -143,6 +145,118 @@ python src/preprocessing.py
 ---
 
 ## 📅 Session Log (Most Recent First)
+
+### **[2025-12-30]: Improved Topic Quality - Embeddings + LLM Labeling**
+
+**Context:** User tested with Trump/Rogan podcast and found topic labels were useless keyword lists ("People, Know, Like, Said, Did") instead of semantic topics ("Assassination Attempt", "Election Fraud"). Needed better topic extraction.
+
+**Changes:**
+- ✅ Upgraded embedding model from `all-MiniLM-L6-v2` to `all-mpnet-base-v2`
+  - 384 dim → 768 dim embeddings for better semantic understanding
+  - Should improve clustering quality and reduce outliers
+- ✅ Added GPU acceleration support
+  - Automatically uses CUDA if available
+  - Can be disabled with `--no-gpu` flag
+  - User has RTX 5080 FE for fast processing
+- ✅ Created `src/topic_labeling.py` module (258 LOC)
+  - Uses Claude API to generate semantic topic labels
+  - Replaces BERTopic's keyword-based labels
+  - Extracts 5 representative chunks per topic
+  - Sends to Claude Haiku for fast, cheap labeling
+  - Cost: ~$0.005-0.05 per 3-hour podcast
+- ✅ Integrated into `main.py` pipeline
+  - New STEP 2.5 after topic modeling
+  - Optional (only runs if API key provided)
+  - Can set via `--claude-api-key` or `ANTHROPIC_API_KEY` env var
+  - Prints before/after labels for comparison
+- ✅ Updated `requirements.txt`
+  - Added `anthropic>=0.18.0` for Claude API
+  - Added `torch>=2.0.0` for GPU support
+- ✅ Updated `MEMORY.md` with implementation details
+
+**Implementation Details:**
+
+**Topic Modeling Changes (`src/topic_modeling.py`):**
+```python
+# NEW parameters
+def __init__(
+    self,
+    embedding_model: str = "all-mpnet-base-v2",  # Upgraded!
+    use_gpu: bool = True,  # NEW!
+    ...
+):
+    # NEW: GPU acceleration
+    if self.use_gpu:
+        import torch
+        if torch.cuda.is_available():
+            self.embedding_model = self.embedding_model.to('cuda')
+```
+
+**Topic Labeling (`src/topic_labeling.py`):**
+- Extracts representative chunks for each topic (sorted by probability)
+- Creates prompt with chunk examples and current keyword label
+- Sends to Claude Haiku (fast + cheap)
+- Returns short semantic label (2-5 words)
+- Fallback to keyword labels if API fails
+- Stores original keyword label for reference
+
+**Example transformation:**
+- Before: "Beautiful, Bed, Surreal, White House, Lincoln"
+- After: "Assassination Attempt Discussion"
+
+**CLI Usage:**
+```bash
+# With LLM labeling (recommended)
+export ANTHROPIC_API_KEY=sk-...
+python main.py data/trump.txt
+
+# Or with flag
+python main.py data/trump.txt --claude-api-key sk-...
+
+# Without LLM labeling (uses keyword labels)
+python main.py data/trump.txt
+
+# Disable GPU (if needed)
+python main.py data/trump.txt --no-gpu
+```
+
+**Decisions:**
+- **Why all-mpnet-base-v2?** Better semantic understanding than MiniLM, still fast with GPU
+- **Why Claude Haiku?** Cheapest Claude model, fast, excellent for summarization tasks
+- **Why optional?** Users without API key can still use tool (falls back to keywords)
+- **Why GPU by default?** User has RTX 5080 FE, should leverage it for speed
+
+**Testing:**
+- Logic verified (no execution required)
+- User will test locally with Trump podcast (602 chunks, ~17 topics)
+- Expecting semantic labels like:
+  - "Assassination Attempt"
+  - "2020 Election Fraud"
+  - "UFC and Combat Sports"
+  - "California Water Management"
+  - "Apprentice to Politics Transition"
+
+**Expected Improvements:**
+1. Better clustering (768 vs 384 dim embeddings)
+2. Fewer outliers (topic -1)
+3. Semantic topic labels instead of keyword soup
+4. Faster processing (GPU acceleration)
+5. Cost: ~$0.005 per podcast (negligible)
+
+**PRs:** Will be committed to `claude/improve-topic-extraction-1cfQQ`
+
+**Next:**
+- User tests locally
+- Evaluate topic quality vs manual top-10 list
+- Iterate on prompts if needed
+- Consider visualization improvements (thread view)
+
+**Stats:**
+- Files changed: 4
+- New module: 1 (topic_labeling.py, 258 LOC)
+- New dependencies: 2 (anthropic, torch)
+
+---
 
 ### **[2025-12-29]: Fixed Matplotlib Color Format Compatibility**
 

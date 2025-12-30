@@ -19,6 +19,7 @@ from src.preprocessing import TranscriptPreprocessor
 from src.topic_modeling import TopicModeler
 from src.similarity import SimilarityDetector
 from src.visualize import ConversationVisualizer
+from src.topic_labeling import TopicLabeler
 
 
 def main(
@@ -29,7 +30,9 @@ def main(
     min_topic_size: int = 5,
     similarity_threshold: float = 0.75,
     show_returns: bool = True,
-    save_intermediate: bool = True
+    save_intermediate: bool = True,
+    claude_api_key: str = None,
+    use_gpu: bool = True
 ):
     """
     Run the complete conversation visualization pipeline.
@@ -43,6 +46,8 @@ def main(
         similarity_threshold: Threshold for detecting topic returns
         show_returns: Whether to visualize topic returns
         save_intermediate: Whether to save intermediate JSON data
+        claude_api_key: Optional Anthropic API key for semantic topic labeling
+        use_gpu: Whether to use GPU acceleration if available
     """
     print("=" * 80)
     print("PODCAST CONVERSATION FLOW VISUALIZER")
@@ -91,7 +96,8 @@ def main(
         nr_topics=nr_topics,
         min_topic_size=min_topic_size,
         calculate_probabilities=True,
-        verbose=True
+        verbose=True,
+        use_gpu=use_gpu
     )
 
     topics, probabilities = modeler.fit_transform(texts)
@@ -108,6 +114,41 @@ def main(
     print(f"  Unique topics found: {len(set(topics))}")
     print(f"  Topics: {sorted(set(topics))}")
     print()
+
+    # =========================================================================
+    # STEP 2.5: LLM-Powered Topic Labeling (Optional)
+    # =========================================================================
+    if claude_api_key:
+        print("\n" + "=" * 80)
+        print("STEP 2.5: SEMANTIC TOPIC LABELING")
+        print("=" * 80)
+        print("\nImproving topic labels with Claude API...")
+
+        labeler = TopicLabeler(
+            api_key=claude_api_key,
+            model="claude-3-5-haiku-20241022",
+            max_chunks_per_topic=5,
+            label_style="short",
+            verbose=True
+        )
+
+        chunks = labeler.improve_topic_labels(chunks, topic_model=modeler)
+
+        print("\nSemantic labeling complete!")
+        print("\nUpdated topic labels:")
+        unique_topics = sorted(set(c['topic_id'] for c in chunks))
+        for topic_id in unique_topics:
+            label = next(c['topic_label'] for c in chunks if c['topic_id'] == topic_id)
+            print(f"  Topic {topic_id}: {label}")
+        print()
+    else:
+        print("\n" + "=" * 80)
+        print("STEP 2.5: SEMANTIC TOPIC LABELING")
+        print("=" * 80)
+        print("Skipping LLM-powered labeling (no API key provided)")
+        print("Using keyword-based labels from BERTopic")
+        print("Tip: Use --claude-api-key to get better semantic labels!")
+        print()
 
     # =========================================================================
     # STEP 3: Similarity Detection
@@ -291,7 +332,23 @@ if __name__ == "__main__":
         help="Don't save intermediate JSON data"
     )
 
+    parser.add_argument(
+        "--claude-api-key",
+        type=str,
+        default=None,
+        help="Anthropic API key for semantic topic labeling (or set ANTHROPIC_API_KEY env var)"
+    )
+
+    parser.add_argument(
+        "--no-gpu",
+        action="store_true",
+        help="Disable GPU acceleration (use CPU only)"
+    )
+
     args = parser.parse_args()
+
+    # Get Claude API key from args or environment
+    claude_api_key = args.claude_api_key or os.getenv('ANTHROPIC_API_KEY')
 
     # Convert nr_topics to int if not 'auto'
     nr_topics = args.nr_topics
@@ -306,5 +363,7 @@ if __name__ == "__main__":
         min_topic_size=args.min_topic_size,
         similarity_threshold=args.similarity_threshold,
         show_returns=not args.no_returns,
-        save_intermediate=not args.no_save_data
+        save_intermediate=not args.no_save_data,
+        claude_api_key=claude_api_key,
+        use_gpu=not args.no_gpu
     )
