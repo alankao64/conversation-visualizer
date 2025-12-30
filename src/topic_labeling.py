@@ -228,6 +228,186 @@ Return ONLY the topic label, nothing else. No explanations, no quotes, just the 
 
         return chunks
 
+    def create_topic_hierarchy(
+        self,
+        chunks: List[Dict],
+        expected_super_topics: Optional[List[str]] = None,
+        target_num_super_topics: int = 10
+    ) -> List[Dict]:
+        """
+        Create hierarchical topic structure by grouping fine topics into super-topics.
+
+        Uses Claude to intelligently group related fine-grained topics into
+        broader thematic super-topics for cleaner visualization.
+
+        Args:
+            chunks: List of chunks with fine topic labels
+            expected_super_topics: Optional list of expected super-topic names for guidance
+            target_num_super_topics: Target number of super-topics to create (8-12 recommended)
+
+        Returns:
+            Updated chunks with super_topic_label and super_topic_id fields
+        """
+        if self.verbose:
+            print("\nCreating topic hierarchy...")
+
+        # Get unique fine topics
+        unique_topics = sorted(set(c['topic_id'] for c in chunks if c['topic_id'] != -1))
+
+        if self.verbose:
+            print(f"Grouping {len(unique_topics)} fine topics into ~{target_num_super_topics} super-topics...")
+
+        # Build mapping of topic_id -> topic_label
+        topic_labels = {}
+        for topic_id in unique_topics:
+            label = next(c['topic_label'] for c in chunks if c['topic_id'] == topic_id)
+            topic_labels[topic_id] = label
+
+        # Create prompt for Claude to group topics
+        prompt = self._create_hierarchy_prompt(
+            topic_labels,
+            expected_super_topics,
+            target_num_super_topics
+        )
+
+        try:
+            # Call Claude API
+            response = self.client.messages.create(
+                model=self.model,
+                max_tokens=1000,  # Need more tokens for JSON response
+                temperature=0.3,
+                messages=[{
+                    "role": "user",
+                    "content": prompt
+                }]
+            )
+
+            # Extract and parse JSON response
+            response_text = response.content[0].text.strip()
+
+            # Remove markdown code blocks if present
+            if response_text.startswith("```"):
+                response_text = response_text.split("```")[1]
+                if response_text.startswith("json"):
+                    response_text = response_text[4:]
+                response_text = response_text.strip()
+
+            import json
+            topic_grouping = json.loads(response_text)
+
+            # Convert string keys to integers
+            topic_to_super = {int(k): v for k, v in topic_grouping.items()}
+
+            # Create super-topic ID mapping (assign numbers to unique super-topic labels)
+            unique_super_labels = sorted(set(topic_to_super.values()))
+            super_label_to_id = {label: idx for idx, label in enumerate(unique_super_labels)}
+
+            if self.verbose:
+                print(f"\nCreated {len(unique_super_labels)} super-topics:")
+                for label, sid in super_label_to_id.items():
+                    # Find which fine topics map to this super-topic
+                    fine_topics = [tid for tid, slabel in topic_to_super.items() if slabel == label]
+                    fine_labels = [topic_labels[tid] for tid in fine_topics]
+                    print(f"  [{sid}] {label}")
+                    for ftid, flabel in zip(fine_topics, fine_labels):
+                        print(f"      ├─ Topic {ftid}: {flabel}")
+
+            # Update all chunks with super-topic information
+            for chunk in chunks:
+                topic_id = chunk['topic_id']
+
+                if topic_id == -1:
+                    # Outlier topic stays as-is
+                    chunk['super_topic_label'] = "Miscellaneous"
+                    chunk['super_topic_id'] = -1
+                else:
+                    super_label = topic_to_super.get(topic_id, "Miscellaneous")
+                    super_id = super_label_to_id.get(super_label, -1)
+
+                    chunk['super_topic_label'] = super_label
+                    chunk['super_topic_id'] = super_id
+
+                # Keep fine topic info for reference
+                chunk['fine_topic_id'] = topic_id
+                chunk['fine_topic_label'] = chunk['topic_label']
+
+            if self.verbose:
+                print(f"\n✓ Hierarchical topic structure created!")
+
+            return chunks
+
+        except Exception as e:
+            if self.verbose:
+                print(f"  Warning: Failed to create hierarchy: {e}")
+                print(f"  Falling back to using fine topics as super-topics")
+
+            # Fallback: use fine topics as super-topics
+            for chunk in chunks:
+                chunk['super_topic_label'] = chunk['topic_label']
+                chunk['super_topic_id'] = chunk['topic_id']
+                chunk['fine_topic_id'] = chunk['topic_id']
+                chunk['fine_topic_label'] = chunk['topic_label']
+
+            return chunks
+
+    def _create_hierarchy_prompt(
+        self,
+        topic_labels: Dict[int, str],
+        expected_super_topics: Optional[List[str]],
+        target_num: int
+    ) -> str:
+        """
+        Create prompt for Claude to group fine topics into super-topics.
+
+        Args:
+            topic_labels: Mapping of topic_id -> topic_label
+            expected_super_topics: Optional list of expected super-topic names
+            target_num: Target number of super-topics
+
+        Returns:
+            Prompt string
+        """
+        # Build list of fine topics
+        topics_list = "\n".join([
+            f"Topic {tid}: {label}"
+            for tid, label in sorted(topic_labels.items())
+        ])
+
+        # Add guidance if expected super-topics provided
+        guidance = ""
+        if expected_super_topics:
+            guidance = f"""
+Common themes that might appear in this type of podcast:
+{chr(10).join(f"- {topic}" for topic in expected_super_topics)}
+
+Use these as light guidance, but feel free to create different groupings if they better fit the actual topics."""
+
+        prompt = f"""You are analyzing topics from a long-form podcast conversation. Below are fine-grained topics that were discovered through clustering.
+
+Your task: Group these related topics into {target_num} broader super-topics (thematic categories).
+
+Fine-grained topics:
+{topics_list}
+{guidance}
+
+Instructions:
+1. Group related fine topics together under broader themes
+2. Create {target_num} super-topics (can be 8-12 if natural groupings suggest it)
+3. Each super-topic should have a clear, descriptive label (3-8 words)
+4. Every fine topic must be assigned to exactly one super-topic
+
+Return your grouping as JSON mapping each fine topic ID to its super-topic label:
+{{
+  "0": "Super Topic Name",
+  "1": "Super Topic Name",
+  "2": "Another Super Topic Name",
+  ...
+}}
+
+Return ONLY the JSON, no explanations."""
+
+        return prompt
+
     def get_topic_summary(
         self,
         topic_id: int,

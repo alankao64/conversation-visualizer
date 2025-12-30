@@ -49,18 +49,22 @@ class ConversationVisualizer:
         # Return as-is if unrecognized format
         return rgb_string
 
-    def _get_topic_colors(self, chunks: List[Dict]) -> Dict[int, str]:
+    def _get_topic_colors(self, chunks: List[Dict], use_super_topics: bool = True) -> Dict[int, str]:
         """
         Generate a color map for topics.
 
         Args:
             chunks: List of chunks with topic assignments
+            use_super_topics: Whether to color by super-topics (True) or fine topics (False)
 
         Returns:
             Dictionary mapping topic_id to color hex code
         """
         # Get unique topics
-        unique_topics = sorted(set(chunk['topic_id'] for chunk in chunks))
+        if use_super_topics and 'super_topic_id' in chunks[0]:
+            unique_topics = sorted(set(chunk['super_topic_id'] for chunk in chunks))
+        else:
+            unique_topics = sorted(set(chunk['topic_id'] for chunk in chunks))
 
         # Use a qualitative color palette
         colors = px.colors.qualitative.Set3 + px.colors.qualitative.Pastel + px.colors.qualitative.Set2
@@ -98,8 +102,11 @@ class ConversationVisualizer:
         """
         print("Creating matplotlib timeline visualization...")
 
+        # Use super-topics if available
+        use_super = 'super_topic_id' in chunks[0]
+
         # Get color map
-        color_map = self._get_topic_colors(chunks)
+        color_map = self._get_topic_colors(chunks, use_super_topics=use_super)
 
         # Create figure
         fig, ax = plt.subplots(figsize=self.figsize)
@@ -108,7 +115,12 @@ class ConversationVisualizer:
 
         # Plot each segment as a colored bar
         for i, chunk in enumerate(chunks):
-            topic_id = chunk['topic_id']
+            # Use super-topic for visualization if available
+            if use_super:
+                topic_id = chunk['super_topic_id']
+            else:
+                topic_id = chunk['topic_id']
+
             color = color_map[topic_id]
 
             # Draw bar for this segment
@@ -127,12 +139,19 @@ class ConversationVisualizer:
             for chunk in chunks:
                 if chunk.get('has_returns', False):
                     to_idx = chunk['segment_id']
-                    to_topic = chunk['topic_id']
+                    # Use super-topic for visual positioning if available
+                    if use_super:
+                        to_topic = chunk['super_topic_id']
+                    else:
+                        to_topic = chunk['topic_id']
 
                     for from_idx, sim_score in zip(chunk['similar_to'], chunk['similarity_scores']):
                         if sim_score >= return_threshold:
                             # Draw arc connecting segments
-                            from_topic = chunks[from_idx]['topic_id']
+                            if use_super:
+                                from_topic = chunks[from_idx]['super_topic_id']
+                            else:
+                                from_topic = chunks[from_idx]['topic_id']
 
                             # Draw a curved line
                             x = [from_idx + 0.5, to_idx + 0.5]
@@ -152,9 +171,15 @@ class ConversationVisualizer:
         # Get unique topics and their labels
         topic_labels = {}
         for chunk in chunks:
-            topic_id = chunk['topic_id']
+            if use_super:
+                topic_id = chunk['super_topic_id']
+                label = chunk['super_topic_label']
+            else:
+                topic_id = chunk['topic_id']
+                label = chunk['topic_label']
+
             if topic_id not in topic_labels:
-                topic_labels[topic_id] = chunk['topic_label']
+                topic_labels[topic_id] = label
 
         # Set y-axis labels
         sorted_topics = sorted(topic_labels.keys())
@@ -202,34 +227,52 @@ class ConversationVisualizer:
         """
         print("Creating Plotly timeline visualization...")
 
+        # Use super-topics if available
+        use_super = 'super_topic_id' in chunks[0]
+
         # Get color map
-        color_map = self._get_topic_colors(chunks)
+        color_map = self._get_topic_colors(chunks, use_super_topics=use_super)
 
         fig = go.Figure()
 
         # Group chunks by topic to create continuous bands
         topic_segments = defaultdict(list)
         for chunk in chunks:
-            topic_id = chunk['topic_id']
+            if use_super:
+                topic_id = chunk['super_topic_id']
+            else:
+                topic_id = chunk['topic_id']
             segment_id = chunk['segment_id']
             topic_segments[topic_id].append(segment_id)
 
         # Create timeline bars for each topic
         for topic_id, segment_ids in topic_segments.items():
             # Get topic label
-            topic_label = chunks[segment_ids[0]]['topic_label']
+            if use_super:
+                topic_label = chunks[segment_ids[0]]['super_topic_label']
+            else:
+                topic_label = chunks[segment_ids[0]]['topic_label']
+
             color = color_map[topic_id]
 
             # Create segments
             for seg_id in segment_ids:
                 chunk = chunks[seg_id]
 
-                # Hover text
-                hover_text = (
-                    f"<b>{topic_label}</b><br>"
-                    f"Segment: {seg_id}<br>"
-                    f"Text: {chunk['text'][:100]}..."
-                )
+                # Hover text - show both super and fine topics if available
+                if use_super:
+                    hover_text = (
+                        f"<b>{chunk['super_topic_label']}</b><br>"
+                        f"Fine topic: {chunk.get('fine_topic_label', 'N/A')}<br>"
+                        f"Segment: {seg_id}<br>"
+                        f"Text: {chunk['text'][:100]}..."
+                    )
+                else:
+                    hover_text = (
+                        f"<b>{topic_label}</b><br>"
+                        f"Segment: {seg_id}<br>"
+                        f"Text: {chunk['text'][:100]}..."
+                    )
 
                 fig.add_trace(go.Bar(
                     x=[1],
@@ -249,11 +292,17 @@ class ConversationVisualizer:
             for chunk in chunks:
                 if chunk.get('has_returns', False):
                     to_idx = chunk['segment_id']
-                    to_topic = chunk['topic_label']
+                    if use_super:
+                        to_topic = chunk['super_topic_label']
+                    else:
+                        to_topic = chunk['topic_label']
 
                     for from_idx, sim_score in zip(chunk['similar_to'], chunk['similarity_scores']):
                         from_chunk = chunks[from_idx]
-                        from_topic = from_chunk['topic_label']
+                        if use_super:
+                            from_topic = from_chunk['super_topic_label']
+                        else:
+                            from_topic = from_chunk['topic_label']
 
                         # Add line
                         fig.add_trace(go.Scatter(
@@ -312,12 +361,18 @@ class ConversationVisualizer:
         """
         print("Creating river diagram...")
 
+        # Use super-topics if available
+        use_super = 'super_topic_id' in chunks[0]
+
         # Get color map
-        color_map = self._get_topic_colors(chunks)
+        color_map = self._get_topic_colors(chunks, use_super_topics=use_super)
 
         # Count topic occurrences per segment position
         n_segments = len(chunks)
-        unique_topics = sorted(set(chunk['topic_id'] for chunk in chunks))
+        if use_super:
+            unique_topics = sorted(set(chunk['super_topic_id'] for chunk in chunks))
+        else:
+            unique_topics = sorted(set(chunk['topic_id'] for chunk in chunks))
 
         # Create data matrix: segments x topics
         topic_matrix = np.zeros((n_segments, len(unique_topics)))
@@ -326,7 +381,10 @@ class ConversationVisualizer:
 
         for chunk in chunks:
             seg_id = chunk['segment_id']
-            topic_id = chunk['topic_id']
+            if use_super:
+                topic_id = chunk['super_topic_id']
+            else:
+                topic_id = chunk['topic_id']
             topic_idx = topic_to_idx[topic_id]
             topic_matrix[seg_id, topic_idx] = 1
 
@@ -344,9 +402,14 @@ class ConversationVisualizer:
             y_values = topic_matrix[:, topic_idx]
 
             # Get label
-            topic_label = next(
-                chunk['topic_label'] for chunk in chunks if chunk['topic_id'] == topic_id
-            )
+            if use_super:
+                topic_label = next(
+                    chunk['super_topic_label'] for chunk in chunks if chunk['super_topic_id'] == topic_id
+                )
+            else:
+                topic_label = next(
+                    chunk['topic_label'] for chunk in chunks if chunk['topic_id'] == topic_id
+                )
 
             # Plot filled area
             ax.fill_between(
@@ -396,10 +459,15 @@ class ConversationVisualizer:
         Returns:
             Dictionary with summary statistics
         """
+        use_super = 'super_topic_id' in chunks[0]
+
         # Topic distribution
         topic_counts = defaultdict(int)
         for chunk in chunks:
-            topic_counts[chunk['topic_id']] += 1
+            if use_super:
+                topic_counts[chunk['super_topic_id']] += 1
+            else:
+                topic_counts[chunk['topic_id']] += 1
 
         # Return statistics
         total_returns = sum(1 for chunk in chunks if chunk.get('has_returns', False))
@@ -407,8 +475,12 @@ class ConversationVisualizer:
         # Topic transitions
         transitions = 0
         for i in range(1, len(chunks)):
-            if chunks[i]['topic_id'] != chunks[i-1]['topic_id']:
-                transitions += 1
+            if use_super:
+                if chunks[i]['super_topic_id'] != chunks[i-1]['super_topic_id']:
+                    transitions += 1
+            else:
+                if chunks[i]['topic_id'] != chunks[i-1]['topic_id']:
+                    transitions += 1
 
         stats = {
             'total_segments': len(chunks),
@@ -418,6 +490,14 @@ class ConversationVisualizer:
             'topic_transitions': transitions,
             'topic_distribution': dict(topic_counts)
         }
+
+        # Add hierarchy stats if available
+        if use_super:
+            fine_topic_counts = defaultdict(int)
+            for chunk in chunks:
+                fine_topic_counts[chunk['fine_topic_id']] += 1
+            stats['unique_fine_topics'] = len(fine_topic_counts)
+            stats['unique_super_topics'] = len(topic_counts)
 
         return stats
 

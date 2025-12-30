@@ -16,16 +16,17 @@
 - ✅ Color format compatibility fix for matplotlib
 
 **What's In Progress:**
-- Testing LLM-powered topic labeling and upgraded embeddings
+- Testing hierarchical topic grouping with Trump podcast
 
 **What's Blocked:**
 - None
 
 **Next Priorities:**
-1. Test upgraded embeddings and LLM labeling with Trump podcast
-2. Evaluate topic quality improvements
-3. Consider visualization enhancements (thread view)
-4. Consider v2.0 features (speaker differentiation, sentiment analysis)
+1. Test hierarchical grouping with Trump podcast
+2. Evaluate if super-topics match manual top-10 list
+3. Consider visualization enhancements (thread view) after hierarchy testing
+4. Fix GPU detection (reinstall PyTorch with CUDA)
+5. Consider v2.0 features (speaker differentiation, sentiment analysis)
 
 ---
 
@@ -55,7 +56,9 @@ python src/preprocessing.py
 **Critical Decisions:**
 - **Embedding model:** `all-mpnet-base-v2` (upgraded from MiniLM for better quality)
 - **GPU acceleration:** Enabled by default (uses CUDA if available)
+- **Topic structure:** Hierarchical (fine topics for threading, super-topics for visualization)
 - **Topic labeling:** Claude API for semantic labels (optional, replaces keyword-based)
+- **Topic grouping:** Claude API for intelligent super-topic creation (8-12 themes)
 - **Default chunk size:** 7 sentences (tested sweet spot)
 - **Similarity threshold:** 0.75 (catches meaningful returns without noise)
 - **Topic discovery:** BERTopic with auto topic count (adaptive to content)
@@ -145,6 +148,104 @@ python src/preprocessing.py
 ---
 
 ## 📅 Session Log (Most Recent First)
+
+### **[2025-12-30]: Hierarchical Topic Grouping**
+
+**Context:** User tested LLM labeling and found fine topics too granular. Got 17 topics when expecting ~10. Topics like "Mail-in Ballots", "Hunter Biden Laptop", and "Voter Fraud" should be grouped under "2020 Election Fraud". Need hierarchical structure: fine topics for threading, super-topics for visualization.
+
+**Changes:**
+- ✅ Added `create_topic_hierarchy()` method to `TopicLabeler` (~160 LOC)
+  - Uses Claude to group fine topics into 8-12 super-topics
+  - Takes user's manual top-10 as light guidance (not strict)
+  - Returns JSON mapping topic IDs to super-topic labels
+  - Handles outliers and errors gracefully
+- ✅ Integrated into `main.py` pipeline (STEP 2.6)
+  - Runs after fine topic labeling
+  - Provides expected super-topics as guidance
+  - Updates chunks with both fine and super topic info
+- ✅ Updated all visualizations to use super-topics
+  - `visualize.py`: Modified all visualization methods
+  - Timeline shows super-topics, hover shows fine topics
+  - River diagram uses super-topics
+  - Topic returns still calculated on fine topics
+- ✅ Updated summary stats to track both levels
+
+**Data Structure:**
+Each chunk now has:
+```python
+{
+  # Fine-grained (for threading)
+  'topic_id': 1,                           # BERTopic cluster
+  'topic_label': 'Mail-in Ballot Issues',  # Claude fine label
+  'fine_topic_id': 1,                      # Copy for reference
+  'fine_topic_label': 'Mail-in Ballot Issues',
+
+  # Coarse (for visualization)
+  'super_topic_id': 3,                     # Grouped ID
+  'super_topic_label': '2020 Election and Fraud'  # Claude super label
+}
+```
+
+**Example Hierarchy:**
+```
+Super-topic: "2020 Election and Fraud" (ID: 3)
+  ├─ Fine topic 1: "Mail-in Ballot Issues"
+  ├─ Fine topic 5: "Hunter Biden Laptop"
+  └─ Fine topic 8: "Voter Fraud Claims"
+
+Super-topic: "UFC and Combat Sports" (ID: 7)
+  ├─ Fine topic 2: "Jon Jones Discussion"
+  ├─ Fine topic 9: "Khabib Analysis"
+  └─ Fine topic 14: "Boxing vs MMA"
+```
+
+**CLI Usage:**
+```bash
+# With hierarchy (recommended)
+export ANTHROPIC_API_KEY=sk-...
+python main.py data/trump.txt
+
+# Output shows:
+# - STEP 2.5: Fine topic labeling (17 topics)
+# - STEP 2.6: Grouping into super-topics (10 super-topics)
+# - Visualizations use super-topics
+```
+
+**Decisions:**
+- **Why hierarchical?** Keep detail for threading, simplify for visualization
+- **Why Claude grouping?** Smarter than similarity-based merging, understands semantics
+- **Why light guidance?** Let Claude discover natural groupings, don't force fits
+- **Why 8-12 super-topics?** Matches typical podcast theme count, not too many/few
+
+**Expected Results:**
+- Super-topics should match user's manual top-10:
+  1. The Assassination Attempt
+  2. Transition from Apprentice to Politics
+  3. Media Bias and Treatment
+  4. 2020 Election and Fraud
+  5. California Water Management
+  6. Environmental Policy and Energy
+  7. Tariffs and Trade
+  8. Ukraine-Russia Conflict
+  9. UFC and Combat Sports
+  10. Campaign Strategy and Young Voters
+
+**Cost:** One additional API call (~$0.001-0.005 per podcast)
+
+**PRs:** Will be committed to `claude/improve-topic-extraction-1cfQQ`
+
+**Next:**
+- User tests locally with Trump podcast
+- Evaluate if super-topics match manual list
+- Fix GPU detection (PyTorch needs CUDA version)
+- Iterate on grouping if needed
+
+**Stats:**
+- Files changed: 3
+- LOC added: ~200
+- New API call: 1 (hierarchy grouping)
+
+---
 
 ### **[2025-12-30]: Improved Topic Quality - Embeddings + LLM Labeling**
 

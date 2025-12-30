@@ -141,6 +141,33 @@ def main(
             label = next(c['topic_label'] for c in chunks if c['topic_id'] == topic_id)
             print(f"  Topic {topic_id}: {label}")
         print()
+
+        # =====================================================================
+        # STEP 2.6: Hierarchical Topic Grouping
+        # =====================================================================
+        print("\n" + "=" * 80)
+        print("STEP 2.6: HIERARCHICAL TOPIC GROUPING")
+        print("=" * 80)
+
+        # Expected super-topics from user's manual analysis (light guidance)
+        expected_super_topics = [
+            "The Assassination Attempt",
+            "Transition from The Apprentice to Politics",
+            "Media Bias and Treatment",
+            "2020 Election and Election Fraud",
+            "California Water and Forest Management",
+            "Environmental Policy and Energy",
+            "Tariffs and Trade Policy",
+            "Ukraine-Russia Conflict",
+            "UFC and Combat Sports",
+            "Campaign Strategy and Reaching Young Voters"
+        ]
+
+        chunks = labeler.create_topic_hierarchy(
+            chunks,
+            expected_super_topics=expected_super_topics,
+            target_num_super_topics=10
+        )
     else:
         print("\n" + "=" * 80)
         print("STEP 2.5: SEMANTIC TOPIC LABELING")
@@ -149,6 +176,13 @@ def main(
         print("Using keyword-based labels from BERTopic")
         print("Tip: Use --claude-api-key to get better semantic labels!")
         print()
+
+        # No hierarchy without API key - use fine topics as super-topics
+        for chunk in chunks:
+            chunk['super_topic_label'] = chunk['topic_label']
+            chunk['super_topic_id'] = chunk['topic_id']
+            chunk['fine_topic_id'] = chunk['topic_id']
+            chunk['fine_topic_label'] = chunk['topic_label']
 
     # =========================================================================
     # STEP 3: Similarity Detection
